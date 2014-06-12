@@ -7,9 +7,36 @@ var AtomRecorder = (function (window) {
 
     var steps = [];
 
-    var lastStep = { type: "none" };
+    var lastStep = { action: "none" };
 
-    var path = function (e) {
+    var resolve = function (name) {
+        if (/^\#/.test(name)) {
+            return document.getElementById(name.substr(1));
+        }
+
+        var e = window;
+
+        if (/^window/i.test(name)) {
+            name = name.substr(7);
+            e = window;
+        }
+        if (/^body/i.test(name)) {
+            name = name.substr(5);
+            e = document.body;
+        }
+
+        var tokens = name.split('.');
+        for (var i = 0; i < tokens.length; i++) {
+            e = $(e).children().get(tokens[i]);
+        }
+        return e;
+    };
+
+    var path = function (e,r) {
+
+        if (!r && e.id) {
+            return "#" + e.id;
+        }
         
         if (e == document.body) {
             return "body";
@@ -23,10 +50,30 @@ var AtomRecorder = (function (window) {
             n++;
         }
         
-        return ( e.parentElement ? path(e.parentElement) : "window") + "." + n;
+        return ( e.parentElement ? path(e.parentElement,true) : "window") + "." + n;
     }
 
-    var recordStep = function (s) {
+    var recordStep = function (evt,s) {
+
+        s.path = path(evt.target);
+        var e = evt.target;
+        if (/input|textarea/i.test(e.nodeName)) {
+            if (/keyup|keydown/i.test(s.action)) {
+                // check last..
+                if (/keyup|keydown|type/i.test(lastStep.action)) {
+                    if (lastStep.path == s.path) {
+                        lastStep.action = "type";
+                        lastStep.value = $(e).val();
+                        return;
+                    }
+                }
+            }
+        }
+
+        if (/type/i.test(lastStep.action)) {
+            lastStep.value = $(resolve(lastStep.path)).val();
+        }
+
         if (console) {
             console.log( JSON.stringify(s,undefined,2));
         }
@@ -35,40 +82,56 @@ var AtomRecorder = (function (window) {
     };
 
     var clickHandler = function (e) {
-        recordStep({
-            type: "click",
+        recordStep(e,{
+            action: "click",
             pageX: e.pageX,
             pageY: e.pageY,
-            path: path(e.target)
+            text: $(e.target).text()
         });
     };
 
     var keyUpHandler = function (e) {
-        if (/type/i.test(lastStep.type)) {
-            lastStep.value = $(e.target).val();
-            if (console) {
-                console.log(lastStep);
-            }
-            return;
-        }
-        recordStep({
-            type: "keyup",
-            path: path(e.target)
+        recordStep(e,{
+            action: "keyup"
         });
     };
 
     var keyDownHandler = function (e) {
-        if (/type/i.test(lastStep.type)) {
-            return;
-        }
-        if (/input|textarea/i.test(e.target.nodeName)) {
-            recordStep({ type:"type", path: path(e.target) });
-            return;
-        }
-        recordStep({
-            type: "keydown",
-            path: path(e.target)
+        recordStep(e,{
+            action: "keydown"
         });
+    };
+
+    var timeout = 100;
+
+    var actions = {
+        type: function (e, item) {
+            if (/submit/i.test(e.type)) {
+                $(e).click();
+            } else {
+                $(e).val(item.value);
+            }
+        },
+        click: function (e, item) {
+            $(e).click();
+        }
+    };
+
+    var popStep = function () {
+        if (!steps.length)
+            return;
+        var s = steps.shift();
+        var f = actions[s.action];
+        if (f) {
+            var e = resolve(s.path);
+            f(e,s);
+        }
+        setTimeout(popStep, timeout);
+    };
+
+    var run = function (sjs) {
+        steps = sjs;
+        setTimeout(popStep, timeout);
     };
 
     return {
@@ -82,6 +145,9 @@ var AtomRecorder = (function (window) {
             $(window).unbind("click", clickHandler);
             $(window).unbind("keyup", keyUpHandler);
             $(window).unbind("keydown", keyDownHandler);
-        }
+        },
+        run: run
     };
 })(window);
+
+var $a = AtomRecorder;
