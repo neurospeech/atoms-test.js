@@ -8,6 +8,7 @@ $(window).ready(function () {
 
         var $ = window.$;
         var document = window.document;
+        var body = document.body;
 
         function resolve(name) {
             if (/^\#/.test(name)) {
@@ -22,7 +23,7 @@ $(window).ready(function () {
             }
             if (/^body/i.test(name)) {
                 name = name.substr(5);
-                e = document.body;
+                e = body;
             }
 
             var tokens = name.split('.');
@@ -54,17 +55,51 @@ $(window).ready(function () {
         }
 
         var defaultActions = {
-            type: function (e, item) {
-                if (/submit/i.test(e.type)) {
-                    $(e).click();
-                } else {
-                    $(e).val(item.value);
+            type: function (r, e, item) {
+                var a = item.actions;
+                var s = r.steps;
+                for (var i = 0; i < a.length; i++) {
+                    var ai = a[i];
+                    ai.path = item.path;
+                    s.unshift(ai);
                 }
             },
-            click: function (e) {
+            drag: function (r, e, item) {
+                var a = item.points;
+                var s = r.steps;
+                for (var i = 0; i < a.length; i+=2) {
+                    var x = a[i];
+                    var y = a[i + 1];
+                    s.unshift({
+                        pageX: x,
+                        pageY: y,
+                        path: item.path,
+                        action: i===0 ? "mousedown" :( i===a.length-2 ? "mouseup": "mousemove")
+                    });
+                }
+            },
+            keydown: function (r, e, item) {
+                $(e).trigger('keydown', item);
+            },
+            keyup: function(r,e,item){
+                $(e).trigger('keyup', item);
+            },
+            keypress: function (r, e, item) {
+                $(e).trigger('keypress', item);
+            },
+            mouseup: function (r, e, item) {
+                $(body).trigger('mouseup', item);
+            },
+            mousemove: function (r, e, item) {
+                $(body).trigger('mousemove', item);
+            },
+            mousedown: function (r, e, item) {
+                $(body).trigger('mousedown', item);
+            },
+            click: function (r, e) {
                 $(e).click();
             },
-            verifyText: function (e, item) {
+            verifyText: function (r, e, item) {
                 var et = $(e).text();
                 if (et !== item.text) {
                     return "Expected " + item.text + " found " + et + " at " + item.path;
@@ -158,7 +193,7 @@ $(window).ready(function () {
                     points.push(e.pageY);
                 }
                 function upHandler(e) {
-                    if (e.pageX != points[0] || e.pageY != points[1]) {
+                    if (e.pageX !== points[0] || e.pageY !== points[1]) {
                         s.recordStep(e, {
                             action: "drag",
                             points: points
@@ -179,7 +214,7 @@ $(window).ready(function () {
 
         };
 
-        var keyProperties = ["action","altKey","shiftKey","ctrlKey","char","charCode","key","keyCode"];
+        var keyProperties = ["which","altKey","shiftKey","ctrlKey","char","charCode","key","keyCode"];
 
         recorder.prototype = {
 
@@ -206,14 +241,6 @@ $(window).ready(function () {
                                     }
                                 }
                                 lastStep.actions.push(se);
-                                //lastStep.actions.push(s.action);
-                                //lastStep.actions.push(evt.altKey);
-                                //lastStep.actions.push(evt.shiftKey);
-                                //lastStep.actions.push(evt.ctrlKey);
-                                //lastStep.actions.push(evt.char);
-                                //lastStep.actions.push(evt.charCode);
-                                //lastStep.actions.push(evt.key);
-                                //lastStep.actions.push(evt.keyCode);
                                 lastStep.value = $(e).val();
                                 return;
                             }
@@ -274,7 +301,7 @@ $(window).ready(function () {
                 var f = actions[s.action];
                 if (f) {
                     var e = resolve(s.path);
-                    var error = f(e, s);
+                    var error = f(this, e, s);
                     if (error) {
                         // error...
                         this.state = "error";
