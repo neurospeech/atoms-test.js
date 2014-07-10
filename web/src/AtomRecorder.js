@@ -3,14 +3,11 @@
 
 $(window).ready(function () { 
 
-    window.AtomRecorder = (function (window) {
+
+    (function (window) {
+
         var $ = window.$;
         var document = window.document;
-
-        var steps = [];
-        var state = "ready";
-
-        var lastStep = { action: "none" };
 
         function resolve(name) {
             if (/^\#/.test(name)) {
@@ -33,7 +30,7 @@ $(window).ready(function () {
                 e = $(e).children().get(tokens[i]);
             }
             return e;
-        };
+        }
 
         function path(e,r) {
 
@@ -41,7 +38,7 @@ $(window).ready(function () {
                 return "#" + e.id;
             }
         
-            if (e == document.body) {
+            if (e === document.body) {
                 return "body";
             }
 
@@ -56,58 +53,7 @@ $(window).ready(function () {
             return ( e.parentElement ? path(e.parentElement,true) : "window") + "." + n;
         }
 
-        function recordStep(evt,s) {
-
-            s.path = path(evt.target);
-            var e = evt.target;
-            if (/input|textarea/i.test(e.nodeName)) {
-                if (/keyup|keydown/i.test(s.action)) {
-                    // check last..
-                    if (/keyup|keydown|type/i.test(lastStep.action)) {
-                        if (lastStep.path == s.path) {
-                            lastStep.action = "type";
-                            lastStep.value = $(e).val();
-                            return;
-                        }
-                    }
-                }
-            }
-
-            if (/type/i.test(lastStep.action)) {
-                lastStep.value = $(resolve(lastStep.path)).val();
-            }
-
-            if (console) {
-                console.log( JSON.stringify(s,undefined,2));
-            }
-            steps.push(s);
-            lastStep = s;
-        };
-
-        function clickHandler(e) {
-            recordStep(e,{
-                action: "click",
-                pageX: e.pageX,
-                pageY: e.pageY,
-                text: $(e.target).text()
-            });
-        };
-
-        function keyUpHandler(e) {
-            recordStep(e,{
-                action: "keyup"
-            });
-        };
-
-        function keyDownHandler(e) {
-            recordStep(e,{
-                action: "keydown"
-            });
-        };
-
-        var timeout = 100;
-
-        var actions = {
+        var defaultActions = {
             type: function (e, item) {
                 if (/submit/i.test(e.type)) {
                     $(e).click();
@@ -115,95 +61,242 @@ $(window).ready(function () {
                     $(e).val(item.value);
                 }
             },
-            click: function (e, item) {
+            click: function (e) {
                 $(e).click();
             },
             verifyText: function (e, item) {
                 var et = $(e).text();
-                if (et != item.text) {
+                if (et !== item.text) {
                     return "Expected " + item.text + " found " + et + " at " + item.path;
                 }
             }
         };
 
-        var isBusy = false;
 
-        function popStep() {
-            if (isBusy) {
-                run();
-                return;
-            }
-            if (!steps.length)
-                return;
-            var s = steps.shift();
-            var f = actions[s.action];
-            if (f) {
-                var e = resolve(s.path);
-                var error = f(e, s);
-                if (error) {
-                    // error...
-                    console.log(error);
-                }
-            }
-            setTimeout(popStep, timeout);
-        };
 
-        function run(sjs) {
-            if (sjs) {
-                steps = sjs;
-            }
-            setTimeout(popStep, timeout);
-        };
+        var recorder = function (options) {
 
-        function registerBusy(f) {
-            isBusy = f();
-        }
-
-        var button = document.createElement("BUTTON");
-        button.style = "position:fixed;right:5px;bottom:5px;background:green;color:white;";
-        $(button).css("position", "absolute");
-        $(button).css("right", "5px");
-        $(button).css("bottom", "5px");
-        $(button).css("background", "green");
-        $(button).css("color", "white");
-        $(button).text("Record");
-        document.body.appendChild(button);
-
-        function start() {
-            $(window).click(clickHandler);
-            $(window).keyup(keyUpHandler);
-            $(window).keydown(keyDownHandler);
-            state = "recording";
-            $(button).text("Stop");
-            $(button).css("background", "red");
-        }
-
-        function stop() {
-            $(window).unbind("click", clickHandler);
-            $(window).unbind("keyup", keyUpHandler);
-            $(window).unbind("keydown", keyDownHandler);
-            state = "ready";
-            $(button).text("Record");
-            $(button).css("background", "green");
-        }
-
-        $(button).click(function () {
-            if (state == "recording") {
-                stop();
+            if (options && options.events) {
+                this.fireEvent = options.events;
             } else {
-                start();
+                this.fireEvent = function (r) {
+                    if (console) {
+                        console.log(r.state + ": " + JSON.stringify(r.lastStep, undefined));
+                    }
+                };
             }
-        });
 
-        return {
-            steps: steps,
-            start: start,
-            stop: stop,
-            run: run,
-            registerBusy: registerBusy,
+            this.actions = defaultActions;
+            this.timeout = 100;
+            this.isBusy = function () {
+                return false;
+            };
+            this.steps = [];
+            this.state = "ready";
+            this.lastStep = { action: "none" };
+            var windowAlert = window.alert;
+
+            var self = this;
+            window.alert = function (msg) {
+                var rec = self;
+                if (rec.state === "recording") {
+                    rec.recordStep({ target: window }, {
+                        action: "alert",
+                        text: msg
+                    });
+                    return windowAlert(msg);
+                }
+                if (rec.state === "running") {
+                    if (!rec.steps.length) {
+                        console.log("Unexpected ALERT found");
+                        return windowAlert();
+                    }
+                    var step = rec.steps.shift();
+                    self.lastStep = step;
+                    if (step.action !== "alert" || step.text !== msg) {
+                        rec.state = "failed";
+                        return;
+                    }
+                    console.log("Alert was simulated successfully.");
+                }
+            };
+
+
+
+            this.clickHandler = function(e) {
+                self.recordStep(e, {
+                    action: "click",
+                    pageX: e.pageX,
+                    pageY: e.pageY,
+                    text: $(e.target).text() || $(e.target).val()
+                });
+            };
+
+            this.keyUpHandler = function (e) {
+                self.recordStep(e, {
+                    action: "keyup"
+                });
+            };
+
+            this.keyPressHandler = function (e) {
+                self.recordStep(e, {
+                    action: "keypress"
+                });
+            };
+
+            this.keyDownHandler = function (e) {
+                self.recordStep(e, {
+                    action: "keydown"
+                });
+            };
+
+            this.mouseDownHandler = (function (s) {
+                var target = null;
+                var points = [];
+                function moveHandler(e) {
+                    points.push(e.pageX);
+                    points.push(e.pageY);
+                }
+                function upHandler(e) {
+                    if (e.pageX != points[0] || e.pageY != points[1]) {
+                        s.recordStep(e, {
+                            action: "drag",
+                            points: points
+                        });
+                    }
+                    $(window).unbind('mousemove', moveHandler);
+                    $(window).unbind('mouseup', upHandler);
+                }
+                return function (e) {
+                    target = e.target;
+                    points.length = 0;
+                    points.push(e.pageX);
+                    points.push(e.pageY);
+                    $(window).mousemove(moveHandler);
+                    $(window).mouseup(upHandler);
+                };
+            })(this);
+
         };
-    })(window);
 
-    window.$a = window.AtomRecorder;
+        var keyProperties = ["action","altKey","shiftKey","ctrlKey","char","charCode","key","keyCode"];
+
+        recorder.prototype = {
+
+
+            recordStep: function (evt,s) {
+
+                var lastStep = this.lastStep;
+
+                s.path = path(evt.target);
+                var e = evt.target;
+                if (/input|textarea/i.test(e.nodeName)) {
+                    if (/keyup|keydown|keypress/i.test(s.action)) {
+                        // check last..
+                        if (/keyup|keydown|keypress|type/i.test(lastStep.action)) {
+                            if (lastStep.path === s.path) {
+                                lastStep.action = "type";
+                                lastStep.actions = lastStep.actions || [];
+                                var se = { action: s.action };
+                                for (var i = 0; i < keyProperties.length; i++) {
+                                    var pn = keyProperties[i];
+                                    var pv = evt[pn];
+                                    if (pv) {
+                                        se[pn] = pv;
+                                    }
+                                }
+                                lastStep.actions.push(se);
+                                //lastStep.actions.push(s.action);
+                                //lastStep.actions.push(evt.altKey);
+                                //lastStep.actions.push(evt.shiftKey);
+                                //lastStep.actions.push(evt.ctrlKey);
+                                //lastStep.actions.push(evt.char);
+                                //lastStep.actions.push(evt.charCode);
+                                //lastStep.actions.push(evt.key);
+                                //lastStep.actions.push(evt.keyCode);
+                                lastStep.value = $(e).val();
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                if (/type/i.test(lastStep.action)) {
+                    lastStep.value = $(resolve(lastStep.path)).val();
+                    if (s.action !== lastStep.action || s.path !== lastStep.path) {
+                        this.fireEvent(this);
+                    }
+                }
+
+                this.steps.push(s);
+                this.lastStep = s;
+                if (!/type|keyup|keydown|keypress/i.test(s.action)) {
+                    this.fireEvent(this);
+                }
+            },
+
+
+            start: function () {
+                $(window).click(this.clickHandler);
+                $(window).keyup(this.keyUpHandler);
+                $(window).keydown(this.keyDownHandler);
+                $(window).keydown(this.keyPressHandler);
+                $(window).mousedown(this.mouseDownHandler);
+                this.state = "recording";
+                this.fireEvent(this);
+            },
+
+            stop: function () {
+                $(window).unbind("click", this.clickHandler);
+                $(window).unbind("keyup", this.keyUpHandler);
+                $(window).unbind("keypress", this.keyPressHandler);
+                $(window).unbind("keydown", this.keyDownHandler);
+                $(window).unbind("mousedown", this.mouseDownHandler);
+                this.state = "ready";
+                this.fireEvent(this);
+            },
+
+
+            popStep: function () {
+                var steps = this.steps;
+                var actions = this.actions;
+                if (this.isBusy()) {
+                    this.run();
+                    return;
+                }
+                if (!steps.length) {
+                    this.state = "success";
+                    this.fireEvent(this);
+                    return;
+                }
+                var s = steps.shift();
+                this.lastStep = s;
+                var f = actions[s.action];
+                if (f) {
+                    var e = resolve(s.path);
+                    var error = f(e, s);
+                    if (error) {
+                        // error...
+                        this.state = "error";
+                        this.fireEvent(this);
+                        return;
+                    }
+                }
+                var self = this;
+                setTimeout(function () { self.popStep(); }, this.timeout);
+            },
+
+            run: function (sjs) {
+                if (sjs) {
+                    this.steps = sjs;
+                }
+                var self = this;
+                setTimeout(function () { self.popStep();}, this.timeout);
+            }
+        };
+
+        window.AtomRecorder = new recorder();
+
+    })(window);
 
 });
