@@ -5,7 +5,6 @@ $(window).ready(function () {
 
 
     (function (window) {
-
         var $ = window.$;
         var document = window.document;
         var body = document.body;
@@ -54,6 +53,14 @@ $(window).ready(function () {
             return ( e.parentElement ? path(e.parentElement,true) : "window") + "." + n;
         }
 
+        var dispatchMouseEvent = function (target) {
+            var e = document.createEvent("MouseEvents");
+            // If you need clientX, clientY, etc., you can call
+            // initMouseEvent instead of initEvent
+            e.initEvent.apply(e, Array.prototype.slice.call(arguments, 1));
+            target.dispatchEvent(e);
+        };
+
         var defaultActions = {
             type: function (r, e, item) {
                 var a = item.actions;
@@ -79,25 +86,34 @@ $(window).ready(function () {
                 }
             },
             keydown: function (r, e, item) {
-                $(e).trigger('keydown', item);
+                var evt = $.Event('keydown');
+                copyKeyProperties(item, evt);
+                $(e).trigger(evt);
             },
             keyup: function(r,e,item){
-                $(e).trigger('keyup', item);
+                var evt = $.Event('keyup');
+                copyKeyProperties(item, evt);
+                $(e).trigger(evt);
             },
             keypress: function (r, e, item) {
-                $(e).trigger('keypress', item);
+                var evt = $.Event('keypress');
+                copyKeyProperties(item, evt);
+                $(e).trigger(evt);
             },
             mouseup: function (r, e, item) {
-                $(body).trigger('mouseup', item);
+                dispatchMouseEvent(e, 'mouseup',  true, true);
             },
             mousemove: function (r, e, item) {
-                $(body).trigger('mousemove', item);
+                dispatchMouseEvent(e, 'mouseover', true, true);
             },
             mousedown: function (r, e, item) {
-                $(body).trigger('mousedown', item);
+                dispatchMouseEvent(e, 'mousedown', true, true);
             },
             click: function (r, e) {
-                $(e).click();
+                //dispatchMouseEvent(e, 'mouseover', true, true);
+                //dispatchMouseEvent(e, 'mousedown', true, true);
+                dispatchMouseEvent(e, 'click', true, true);
+                //dispatchMouseEvent(e, 'mouseup', true, true);
             },
             verifyText: function (r, e, item) {
                 var et = $(e).text();
@@ -214,7 +230,17 @@ $(window).ready(function () {
 
         };
 
-        var keyProperties = ["which","altKey","shiftKey","ctrlKey","char","charCode","key","keyCode"];
+        var keyProperties = {"which":"", "altKey":"", "shiftKey":"", "ctrlKey":"", "char":"", "charCode":"", "key":"", "keyCode":""};
+
+        var copyKeyProperties = function (src, dest) {
+            for (var i in keyProperties) {
+                var v = src[i];
+                if (v) {
+                    dest[i] = v;
+                }
+            }
+            return dest;
+        };
 
         recorder.prototype = {
 
@@ -225,28 +251,23 @@ $(window).ready(function () {
 
                 s.path = path(evt.target);
                 var e = evt.target;
-                if (/input|textarea/i.test(e.nodeName)) {
-                    if (/keyup|keydown|keypress/i.test(s.action)) {
-                        // check last..
-                        if (/keyup|keydown|keypress|type/i.test(lastStep.action)) {
-                            if (lastStep.path === s.path) {
-                                lastStep.action = "type";
-                                lastStep.actions = lastStep.actions || [];
-                                var se = { action: s.action };
-                                for (var i = 0; i < keyProperties.length; i++) {
-                                    var pn = keyProperties[i];
-                                    var pv = evt[pn];
-                                    if (pv) {
-                                        se[pn] = pv;
-                                    }
-                                }
-                                lastStep.actions.push(se);
-                                lastStep.value = $(e).val();
-                                return;
+                if (/keyup|keydown|keypress/i.test(s.action)) {
+                    copyKeyProperties(evt, s);
+                    // check last..
+                    if (/keyup|keydown|keypress|type/i.test(lastStep.action)) {
+                        if (lastStep.path === s.path) {
+                            if (!lastStep.actions) {
+                                lastStep.actions = [copyKeyProperties(lastStep, { action: lastStep.action })];
                             }
+                            lastStep.action = "type";
+                            lastStep.actions.push(copyKeyProperties(s, { action: s.action }));
+                            lastStep.value = $(e).val();
+                            return;
                         }
                     }
                 }
+
+
 
                 if (/type/i.test(lastStep.action)) {
                     lastStep.value = $(resolve(lastStep.path)).val();
@@ -318,6 +339,7 @@ $(window).ready(function () {
                     this.steps = sjs;
                 }
                 var self = this;
+                this.state = "running";
                 setTimeout(function () { self.popStep();}, this.timeout);
             }
         };
