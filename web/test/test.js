@@ -193,12 +193,5 @@
      "action": "alert",
      "text": "somebody clicked me",
      "path": "window.0"
- },
- {
-     "action": "click",
-     "pageX": 0,
-     "pageY": 0,
-     "text": "Click Me",
-     "path": "body.1.3.0"
  }
 ]

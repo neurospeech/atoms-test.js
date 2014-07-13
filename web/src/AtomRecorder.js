@@ -1,5 +1,4 @@
-﻿/// <reference path="../Scripts/jquery-1.9.0.js" />
-/// <reference path="../Scripts/jquery-1.9.0.intellisense.js" />
+﻿/// <reference path="../Scripts/jquery-1.11.1.js" />
 
 $(window).ready(function () { 
 
@@ -78,8 +77,8 @@ $(window).ready(function () {
                     var x = a[i];
                     var y = a[i + 1];
                     s.unshift({
-                        pageX: x,
-                        pageY: y,
+                        clientX: x,
+                        clientY: y,
                         path: item.path,
                         action: i===0 ? "mousedown" :( i===a.length-2 ? "mouseup": "mousemove")
                     });
@@ -100,20 +99,17 @@ $(window).ready(function () {
                 copyKeyProperties(item, evt);
                 $(e).trigger(evt);
             },
-            mouseup: function (r, e, item) {
+            mouseup: function (r, e) {
                 dispatchMouseEvent(e, 'mouseup',  true, true);
             },
-            mousemove: function (r, e, item) {
+            mousemove: function (r, e) {
                 dispatchMouseEvent(e, 'mouseover', true, true);
             },
-            mousedown: function (r, e, item) {
+            mousedown: function (r, e) {
                 dispatchMouseEvent(e, 'mousedown', true, true);
             },
             click: function (r, e) {
-                //dispatchMouseEvent(e, 'mouseover', true, true);
-                //dispatchMouseEvent(e, 'mousedown', true, true);
                 dispatchMouseEvent(e, 'click', true, true);
-                //dispatchMouseEvent(e, 'mouseup', true, true);
             },
             verifyText: function (r, e, item) {
                 var et = $(e).text();
@@ -148,6 +144,7 @@ $(window).ready(function () {
             var windowAlert = window.alert;
 
             var self = this;
+
             window.alert = function (msg) {
                 var rec = self;
                 if (rec.state === "recording") {
@@ -177,8 +174,8 @@ $(window).ready(function () {
             this.clickHandler = function(e) {
                 self.recordStep(e, {
                     action: "click",
-                    pageX: e.pageX,
-                    pageY: e.pageY,
+                    clientX: e.clientX,
+                    clientY: e.clientY,
                     text: $(e.target).text() || $(e.target).val()
                 });
             };
@@ -205,11 +202,11 @@ $(window).ready(function () {
                 var target = null;
                 var points = [];
                 function moveHandler(e) {
-                    points.push(e.pageX);
-                    points.push(e.pageY);
+                    points.push(e.clientX);
+                    points.push(e.clientY);
                 }
                 function upHandler(e) {
-                    if (e.pageX !== points[0] || e.pageY !== points[1]) {
+                    if (e.clientX !== points[0] || e.clientY !== points[1]) {
                         s.recordStep(e, {
                             action: "drag",
                             points: points
@@ -221,8 +218,8 @@ $(window).ready(function () {
                 return function (e) {
                     target = e.target;
                     points.length = 0;
-                    points.push(e.pageX);
-                    points.push(e.pageY);
+                    points.push(e.clientX);
+                    points.push(e.clientY);
                     $(window).mousemove(moveHandler);
                     $(window).mouseup(upHandler);
                 };
@@ -230,15 +227,15 @@ $(window).ready(function () {
 
         };
 
-        var keyProperties = {"which":"", "altKey":"", "shiftKey":"", "ctrlKey":"", "char":"", "charCode":"", "key":"", "keyCode":""};
+        var keyProperties = ["which", "altKey", "shiftKey", "ctrlKey", "char", "charCode", "key", "keyCode"];
 
         var copyKeyProperties = function (src, dest) {
-            for (var i in keyProperties) {
-                var v = src[i];
+            $.each(keyProperties, function (i,k) {
+                var v = src[k];
                 if (v) {
-                    dest[i] = v;
+                    dest[k] = v;
                 }
-            }
+            });
             return dest;
         };
 
@@ -251,10 +248,27 @@ $(window).ready(function () {
 
                 s.path = path(evt.target);
                 var e = evt.target;
+
+                // if last step was an alert, next click should be ignored as 
+                // click will be recorded on alert window, and there is no way
+                // to simulate click on alert window. So alert function will be
+                // just called to confirm that alert was executed successfully but
+                // alert will not be displayed while running
+                if (/alert/i.test(lastStep.action) && /click/i.test(s.action)) {
+                    return;
+                }
+
+                // When action is an keyboard action, we want to combine
+                // multiple keyboard events on one HtmlElement to save space and
+                // emulate change event on input/textarea element
                 if (/keyup|keydown|keypress/i.test(s.action)) {
                     copyKeyProperties(evt, s);
-                    // check last..
+                    
+                    // check if last step was also a keyboard event
                     if (/keyup|keydown|keypress|type/i.test(lastStep.action)) {
+
+                        // only if the element is same, we should combine 
+                        // text type event
                         if (lastStep.path === s.path) {
                             if (!lastStep.actions) {
                                 lastStep.actions = [copyKeyProperties(lastStep, { action: lastStep.action })];
