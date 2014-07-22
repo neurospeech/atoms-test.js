@@ -115,9 +115,14 @@ $(window).ready(function () {
 
         var defaultActions = {
             alert: function () {
-                throw new Error("Unexpected alert !!!");
+                return "Unexpected alert !!!";
             },
             type: function (r, e, item) {
+                $(e).focus();
+                if (/input|textarea/i.test(e.nodeName)) {
+                    e.value = item.value;
+                    return;
+                }
                 var a = item.actions;
                 var s = r.steps;
                 for (var i = a.length-1; i >=0; i--) {
